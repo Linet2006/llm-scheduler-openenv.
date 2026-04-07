@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm_scheduler"
+version = "0.1.0"
+description = "OpenEnv LLM Scheduler Hackathon Submission"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "openenv-core"
+]
