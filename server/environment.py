@@ -68,7 +68,6 @@ class LLMSchedulerEnvironment:
                     self._state.completed_requests += 1
 
         # 3. Process Deadlines
-     # 3. Process Deadlines
         to_drop = []
         for req_id, req in self.queue.items():
             req.deadline -= 1
@@ -94,7 +93,7 @@ class LLMSchedulerEnvironment:
             else:
                 score = self._state.completed_requests / total
                 penalty = (self._state.sla_violations / total) * 0.5
-                reward = max(0.0, min(1.0, score - penalty)) # Strict 0-1 bounds
+                reward = max(0.0, min(1.0, score - penalty)) 
             self._state.final_score = reward
 
         return self._get_obs(done=done, reward=reward, msg=msg)
@@ -108,6 +107,10 @@ class LLMSchedulerEnvironment:
     @property
     def state(self) -> SchedulerState:
         return self._state
+
+    def close(self):
+        """Standard cleanup method required by OpenEnv server."""
+        pass
     
 # --- OpenEnv Async Server Wrappers ---
     async def reset_async(self, task_level: str = "easy") -> SchedulerObservation:
@@ -118,3 +121,7 @@ class LLMSchedulerEnvironment:
 
     async def get_state_async(self) -> SchedulerState:
         return self.state
+
+    async def close_async(self):
+        """Async version of the cleanup method."""
+        self.close()
