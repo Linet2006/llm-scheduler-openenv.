@@ -1,0 +1,21 @@
+version: "1.0"
+name: "llm_scheduler"
+description: "A Multi-Tenant LLM Serving Scheduler where an agent routes inference requests to GPUs."
+
+server:
+  app: "server.app:app"
+  port: 8000
+
+tasks:
+  - id: "scheduler-easy"
+    description: "Single GPU scheduling. No dynamic traffic."
+    reset_params:
+      task_level: "easy"
+  - id: "scheduler-medium"
+    description: "Dual GPU scheduling. Manage mixed priorities."
+    reset_params:
+      task_level: "medium"
+  - id: "scheduler-hard"
+    description: "Three GPUs with high continuous traffic. Maximize SLA compliance."
+    reset_params:
+      task_level: "hard"
