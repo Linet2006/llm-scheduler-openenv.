@@ -5,10 +5,13 @@ from typing import List, Optional
 from openai import OpenAI
 from client import SchedulerEnvClient, SchedulerAction
 
-# --- CONFIGURATION ---
-API_KEY = os.getenv("OPENAI_API_KEY") or os.getenv("HF_TOKEN")
-API_BASE_URL = os.getenv("OPENAI_BASE_URL") or "https://router.huggingface.co/v1"
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+# --- STRICT PROXY CONFIGURATION (PHASE 2 FIX) ---
+# We MUST prioritize 'API_KEY' as the judge injects this name specifically.
+API_KEY = os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("HF_TOKEN")
+API_BASE_URL = os.getenv("API_BASE_URL") or os.getenv("OPENAI_BASE_URL") or "https://router.huggingface.co/v1"
+
+# Use model name from judge or default to Qwen
+MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
 ENV_URL = os.getenv("ENV_URL", "http://127.0.0.1:8000")
 
 # --- STRICT PHASE 2 LOGGING FORMAT ---
@@ -67,12 +70,12 @@ async def run_task(task_id: str, env_client: SchedulerEnvClient, openai_client: 
     log_end(task_id, final_state.final_score, steps_count)
 
 async def main() -> None:
+    # Initialize with the prioritized proxy variables
     openai_client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
     env = SchedulerEnvClient(base_url=ENV_URL)
     await env.connect()
     
     try:
-        # These names must match what the validator expects
         for task in ["scheduler-easy", "scheduler-medium", "scheduler-hard"]:
             await run_task(task, env, openai_client)
     finally:
