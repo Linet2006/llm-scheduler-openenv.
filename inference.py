@@ -5,23 +5,24 @@ from typing import List, Optional
 from openai import OpenAI
 from client import SchedulerEnvClient, SchedulerAction
 
-# --- CHECKLIST COMPLIANT CONFIGURATION ---
-# Using the exact environment variables required by the Phase 2 validator
+# --- CONFIGURATION ---
 API_KEY = os.getenv("OPENAI_API_KEY") or os.getenv("HF_TOKEN")
 API_BASE_URL = os.getenv("OPENAI_BASE_URL") or "https://router.huggingface.co/v1"
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 ENV_URL = os.getenv("ENV_URL", "http://127.0.0.1:8000")
 
-# --- REQUIRED LOGGING FORMAT (STRICT) ---
-# Removed brackets [] to ensure the validator catches the keywords
-def log_start():
-    print("START", flush=True)
+# --- STRICT PHASE 2 LOGGING FORMAT ---
+def log_start(task_name: str):
+    # Format: [START] task=NAME
+    print(f"[START] task={task_name}", flush=True)
 
-def log_step(step: int):
-    print(f"STEP {step}", flush=True)
+def log_step(step: int, reward: float):
+    # Format: [STEP] step=1 reward=0.5
+    print(f"[STEP] step={step} reward={reward:.4f}", flush=True)
 
-def log_end():
-    print("END", flush=True)
+def log_end(task_name: str, score: float, steps: int):
+    # Format: [END] task=NAME score=0.95 steps=1
+    print(f"[END] task={task_name} score={score:.4f} steps={steps}", flush=True)
 
 SYSTEM_PROMPT = """You are an AI load balancer. Dispatch ONE request from the 'queue' to an 'IDLE' GPU.
 Reply ONLY with JSON format: {"request_id": int, "gpu_id": int}. If queue is empty or no GPUs are IDLE, return {"request_id": -1, "gpu_id": -1}."""
@@ -41,31 +42,37 @@ def get_model_message(client: OpenAI, obs_json: str) -> tuple[SchedulerAction, s
         return SchedulerAction(request_id=-1, gpu_id=-1), '{"request_id": -1, "gpu_id": -1}'
 
 async def run_task(task_id: str, env_client: SchedulerEnvClient, openai_client: OpenAI):
-    log_start() # Required keyword
+    # 1. LOG START
+    log_start(task_id)
     
     level = task_id.split("-")[-1]
     result = await env_client.reset(task_level=level)
     
+    steps_count = 0
     for step in range(1, 21): 
         if result.done:
             break
-            
-        log_step(step) # Required keyword
         
+        steps_count = step
         obs_json = result.observation.model_dump_json()
         action_obj, _ = get_model_message(openai_client, obs_json)
         
         result = await env_client.step(action_obj)
         
-    log_end() # Required keyword
+        # 2. LOG STEP (Required for parsing rewards)
+        log_step(step, result.reward)
+        
+    # 3. LOG END (Required for final score)
+    final_state = await env_client.state()
+    log_end(task_id, final_state.final_score, steps_count)
 
 async def main() -> None:
-    # Initializing with the standardized client config
     openai_client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
     env = SchedulerEnvClient(base_url=ENV_URL)
     await env.connect()
     
     try:
+        # These names must match what the validator expects
         for task in ["scheduler-easy", "scheduler-medium", "scheduler-hard"]:
             await run_task(task, env, openai_client)
     finally:
