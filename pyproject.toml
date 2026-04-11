@@ -1,3 +1,4 @@
+
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -9,6 +10,7 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "openenv-core",
+    "openai",
 ]
 
 [project.scripts]
