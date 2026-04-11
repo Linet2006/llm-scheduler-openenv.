@@ -137,6 +137,7 @@ class LLMSchedulerEnvironment:
 
     @property
     def state(self) -> SchedulerState:
+        self._state.final_score = max(0.01, min(0.99, self._state.final_score))
         return self._state
 
     def close(self):
