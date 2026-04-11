@@ -32,7 +32,7 @@ class LLMSchedulerEnvironment:
         for _ in range(initial_reqs):
             self._spawn_request()
 
-        return self._get_obs(done=False, reward=0.0, msg=f"Reset to {task_level} mode.")
+        return self._get_obs(done=False, reward=0.05, msg=f"Reset to {task_level} mode.")
 
     def _spawn_request(self):
         tier = "PAID" if random.random() > 0.5 else "FREE"
@@ -47,18 +47,18 @@ class LLMSchedulerEnvironment:
     def step(self, action: SchedulerAction) -> SchedulerObservation:
         self._state.step_count += 1
         msg = "Agent chose to wait."
-        step_reward = 0.0
+        step_reward = 0.05  # base — ensures no step is ever 0.0
 
-        # 1. Process Action — dense reward per dispatch decision
+        # 1. Process Action
         if action.request_id != -1 and action.gpu_id != -1:
             if action.request_id not in self.queue:
-                step_reward -= 0.15
+                step_reward = 0.02
                 msg = f"Error: Req {action.request_id} missing."
             elif action.gpu_id not in self.gpus:
-                step_reward -= 0.15
+                step_reward = 0.02
                 msg = f"Error: GPU {action.gpu_id} missing."
             elif self.gpus[action.gpu_id].status == "BUSY":
-                step_reward -= 0.20  # penalty for dispatching to busy GPU
+                step_reward = 0.02
                 msg = f"Error: GPU {action.gpu_id} BUSY."
             else:
                 req = self.queue.pop(action.request_id)
@@ -66,14 +66,12 @@ class LLMSchedulerEnvironment:
                 gpu.status = "BUSY"
                 gpu.remaining_tokens = req.token_size
                 gpu.current_request_tier = req.tier
-                # PAID tier is higher priority — reward more
-                step_reward += 0.30 if req.tier == "PAID" else 0.15
+                step_reward = 0.80 if req.tier == "PAID" else 0.60
                 msg = f"Success: Dispatched Req {action.request_id} to GPU {action.gpu_id}."
         else:
-            # Penalize waiting when there are idle GPUs and queued requests
             idle_gpus = [g for g in self.gpus.values() if g.status == "IDLE"]
             if self.queue and idle_gpus:
-                step_reward -= 0.10  # agent should not idle when work is available
+                step_reward = 0.03  # idle when work available — low but not zero
 
         # 2. Advance GPUs
         for gpu in self.gpus.values():
@@ -84,9 +82,8 @@ class LLMSchedulerEnvironment:
                     gpu.remaining_tokens = 0.0
                     gpu.current_request_tier = None
                     self._state.completed_requests += 1
-                    step_reward += 0.10  # small bonus for completing a request
 
-        # 3. Process Deadlines — penalty per SLA violation
+        # 3. Process Deadlines
         to_drop = []
         for req_id, req in self.queue.items():
             req.deadline -= 1
@@ -96,7 +93,6 @@ class LLMSchedulerEnvironment:
             del self.queue[req_id]
             self._state.dropped_requests += 1
             self._state.sla_violations += 1
-            step_reward -= 0.25  # clear penalty for each dropped request
 
         # 4. Hard Mode Traffic
         if self._state.task_level == "hard" and random.random() < 0.4 and len(self.queue) < 8:
@@ -108,24 +104,20 @@ class LLMSchedulerEnvironment:
             (len(self.queue) == 0 and all(g.status == "IDLE" for g in self.gpus.values()))
         )
 
-        # 6. Final score bonus on episode end (WITH PHASE 2 CLAMP FIX)
+        # 6. Final score on episode end
         if done:
             total = self._state.completed_requests + self._state.dropped_requests
             if total == 0:
-                final_bonus = 0.20
-                raw_score = 0.95 # Safety default for zero total
+                raw_score = 0.50
             else:
-                raw_score = self._state.completed_requests / total
-                sla_penalty = (self._state.sla_violations / total) * 0.5
-                final_bonus = max(0.0, min(0.30, (raw_score - sla_penalty) * 0.30))
-            
-            step_reward += final_bonus
-            
-            # The Fix: Strictly between 0 and 1 so the validator doesn't crash
+                score = self._state.completed_requests / total
+                penalty = (self._state.sla_violations / total) * 0.3
+                raw_score = score - penalty
             self._state.final_score = max(0.01, min(0.99, float(raw_score)))
+            step_reward = self._state.final_score
 
-        # Clamp step reward to [-1.0, 1.0]
-        step_reward = max(-1.0, min(1.0, round(step_reward, 2)))
+        # CRITICAL: clamp strictly between 0.01 and 0.99 — no zeros, no negatives
+        step_reward = max(0.01, min(0.99, round(float(step_reward), 2)))
 
         return self._get_obs(done=done, reward=step_reward, msg=msg)
 
