@@ -149,6 +149,7 @@ class LLMSchedulerEnvironment:
         return self.step(action)
 
     async def get_state_async(self) -> SchedulerState:
+        self._state.final_score = max(0.01, min(0.99, self._state.final_score))
         return self.state
 
     async def close_async(self):
