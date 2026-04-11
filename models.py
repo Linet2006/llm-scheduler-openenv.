@@ -30,4 +30,4 @@ class SchedulerState(State):
     completed_requests: int = 0
     dropped_requests: int = 0
     sla_violations: int = 0
-    final_score: float = 0.0 # 0.0 to 1.0 grader score
+    final_score: float = 0.01
