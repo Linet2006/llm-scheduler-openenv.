@@ -18,21 +18,22 @@ class LLMSchedulerEnvironment:
 
     def reset(self, task_level: str = "easy") -> SchedulerObservation:
         self._state = SchedulerState(task_level=task_level, episode_id=str(uuid.uuid4()), step_count=0)
-
         if task_level == "easy":
             self.max_steps, num_gpus, initial_reqs = 5, 1, 2
         elif task_level == "medium":
             self.max_steps, num_gpus, initial_reqs = 10, 2, 4
         else:
             self.max_steps, num_gpus, initial_reqs = 15, 3, 6
-
+            
         self.gpus = {i: GPUData(gpu_id=i, status="IDLE", remaining_tokens=0.0) for i in range(num_gpus)}
         self.queue = {}
         self.req_counter = 0
+        
         for _ in range(initial_reqs):
             self._spawn_request()
-
-        return self._get_obs(done=False, reward=0.05, msg=f"Reset to {task_level} mode.")
+            
+        # The reset reward must be 0.0 to avoid inflating the total sum
+        return self._get_obs(done=False, reward=0.0, msg=f"Reset to {task_level} mode.")
 
     def _spawn_request(self):
         tier = "PAID" if random.random() > 0.5 else "FREE"
@@ -47,18 +48,17 @@ class LLMSchedulerEnvironment:
     def step(self, action: SchedulerAction) -> SchedulerObservation:
         self._state.step_count += 1
         msg = "Agent chose to wait."
-        step_reward = 0.05  # base — ensures no step is ever 0.0
+        
+        # SPARSE REWARD: Intermediate steps must be exactly 0.0
+        step_reward = 0.0  
 
         # 1. Process Action
         if action.request_id != -1 and action.gpu_id != -1:
             if action.request_id not in self.queue:
-                step_reward = 0.02
                 msg = f"Error: Req {action.request_id} missing."
             elif action.gpu_id not in self.gpus:
-                step_reward = 0.02
                 msg = f"Error: GPU {action.gpu_id} missing."
             elif self.gpus[action.gpu_id].status == "BUSY":
-                step_reward = 0.02
                 msg = f"Error: GPU {action.gpu_id} BUSY."
             else:
                 req = self.queue.pop(action.request_id)
@@ -66,12 +66,7 @@ class LLMSchedulerEnvironment:
                 gpu.status = "BUSY"
                 gpu.remaining_tokens = req.token_size
                 gpu.current_request_tier = req.tier
-                step_reward = 0.80 if req.tier == "PAID" else 0.60
                 msg = f"Success: Dispatched Req {action.request_id} to GPU {action.gpu_id}."
-        else:
-            idle_gpus = [g for g in self.gpus.values() if g.status == "IDLE"]
-            if self.queue and idle_gpus:
-                step_reward = 0.03  # idle when work available — low but not zero
 
         # 2. Advance GPUs
         for gpu in self.gpus.values():
@@ -113,11 +108,10 @@ class LLMSchedulerEnvironment:
                 score = self._state.completed_requests / total
                 penalty = (self._state.sla_violations / total) * 0.3
                 raw_score = score - penalty
+                
+            # CLAMP: Ensure the ONLY non-zero reward is strictly between 0 and 1
             self._state.final_score = max(0.01, min(0.99, float(raw_score)))
             step_reward = self._state.final_score
-
-        # CRITICAL: clamp strictly between 0.01 and 0.99 — no zeros, no negatives
-        step_reward = max(0.01, min(0.99, round(float(step_reward), 2)))
 
         return self._get_obs(done=done, reward=step_reward, msg=msg)
 
@@ -129,6 +123,7 @@ class LLMSchedulerEnvironment:
 
     @property
     def state(self) -> SchedulerState:
+        # Safety clamp just in case
         self._state.final_score = max(0.01, min(0.99, self._state.final_score))
         return self._state
 
