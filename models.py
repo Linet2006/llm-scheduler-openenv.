@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from typing import List, Optional
 from openenv.core.env_server import Action, Observation, State
 
@@ -31,3 +32,8 @@ class SchedulerState(State):
     dropped_requests: int = 0
     sla_violations: int = 0
     final_score: float = 0.01
+
+    @field_validator('final_score')
+    @classmethod
+    def clamp_score(cls, v):
+        return max(0.01, min(0.99, v))
