@@ -50,7 +50,7 @@ class LLMSchedulerEnvironment:
         msg = "Agent chose to wait."
         
         # SPARSE REWARD: Intermediate steps must be exactly 0.0
-        step_reward = 0.0  
+        step_reward = 0.05 
 
         # 1. Process Action
         if action.request_id != -1 and action.gpu_id != -1:
