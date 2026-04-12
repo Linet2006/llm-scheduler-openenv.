@@ -45,56 +45,55 @@ async def run_task(task_id: str, env_client: SchedulerEnvClient, openai_client: 
     rewards = []
     steps_done = 0
     success = False
-
+    
     print(f"[START] task={task_id} env={ENV_BENCHMARK} model={MODEL_NAME}", flush=True)
-
+    
     try:
         level = task_id.split("-")[-1]
         result = await env_client.reset(task_level=level)
-
+        
         for step in range(1, 21):
             if result.done:
                 success = True
                 break
-
+                
             steps_done = step
             obs_json = result.observation.model_dump_json()
             action_obj, action_str = get_action(openai_client, obs_json)
             result = await env_client.step(action_obj)
-
+            
             safe_reward = float(result.reward if result.reward is not None else 0.0)
-
+            
             # SAFETY NET: If the episode ends and the sum is exactly 0.0, force a 0.01 to pass validation
             if (result.done or step == 20) and sum(rewards) == 0.0 and safe_reward <= 0.0:
                 safe_reward = 0.01
-
+                
             rewards.append(safe_reward)
-
             done_str = "true" if result.done else "false"
             clean_action = action_str.replace('\n', '').replace('\r', '').replace(' ', '')
             fb = result.observation.feedback_message or ""
             error_str = fb.replace('\n', ' ') if fb.startswith("Error") else "null"
-
+            
             print(
                 f"[STEP] step={step} action={clean_action} reward={safe_reward:.2f} done={done_str} error={error_str}",
                 flush=True
             )
-
+            
             if result.done:
                 success = True
                 break
-
+                
     except Exception as e:
         clean_err = str(e).replace('\n', ' ')
         fail_reward = 0.01 if sum(rewards) == 0.0 else 0.00
         print(f"[STEP] step={steps_done+1} action=null reward={fail_reward:.2f} done=false error={clean_err}", flush=True)
         rewards.append(fail_reward)
-
+        
     finally:
         if not rewards:
             print(f"[STEP] step=1 action=null reward=0.01 done=true error=null", flush=True)
             rewards.append(0.01)
-
+            
         rewards_str = ",".join(f"{r:.2f}" for r in rewards)
         final_score = sum(rewards)
         
